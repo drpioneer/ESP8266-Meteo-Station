@@ -6,10 +6,10 @@
 http://arduino.ru/forum/proekty/meteostantsiya-dlya-narodnogo-monitoringa#comment-551457
 
 При работе метеостанция получает информацию от датчиков:
-* температуры воздуха - DS18B20
-* атмосферного давления - BME280/BMP280
-* направления ветра (магнитный энкодер) - AS5600
-* скорости ветра (датчик Холла) - OH137
+* температуры воздуха - DS18B20 https://amperkot.ru/msk/catalog/germetichnyiy_datchik_ds18b20_1_metr__bez_parazitnogo_rezhima-39162651.html
+* атмосферного температуры, влажности и давления - AHT20 + BMP280 https://amperkot.ru/msk/catalog/modul_datchika_temperaturyi_vlazhnosti_i_davleniya_na_chipah_aht20bmp280_s_interfeysom_i2c-39385782.html
+* направления ветра - AS5600 https://amperkot.ru/msk/catalog/magnitnyiy_enkoder_na_datchike_holla_as5600_12bit-39166160.html
+* скорости ветра - OH137 https://amperkot.ru/msk/catalog/oh137_odnopolyarnyiy_tsifrovoy_datchik_holla-39870913.html
 
 Программа автоматически определяет наличие датчиков и шлет от них информацию на сервер. При первом запуске или отсутствии сети создается точка доступа на 5 секунд (нужно успеть подключиться). В WEB-интерфейсе можно просканировать сети и подключиться к имеющейся либо вписать название сети вручную, после чего на сайт начинают отправлятся данные, а в SERIAL выводится уникальный ID станции, который потом привяжется к сайту. Дополнительно станция отсылает на сервер информацию о напряжении VCC и уровне сигнала Wifi в %. Все показания и статистику на графиках можно смотреть в приложениях под разные платформы, в том числе Android, IOS. Для отладки без Wifi удобно закоментировать 63 и 208 строки.
 
