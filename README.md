@@ -1,7 +1,7 @@
 # ESP8266-Meteo-Station
 Метеостанция на базе отладочной платы WeMos D1R2 & mini (Lolin D1R2 & mini) на основе ESP8266.
 В коде используются идеи различных авторов, найденные на просторах интернета, и сторонние библиотеки для работы с климатическими датчиками.
-Код написан для среды Arduino IDE. Прототип взят отсюда: http://arduino.ru/forum/proekty/meteostantsiya-dlya-narodnogo-monitoringa#comment-551457
+Код написан в среде Arduino IDE.
 
 При работе метеостанция получает информацию от датчиков:
 * температуры воздуха - DS18B20 https://amperkot.ru/msk/catalog/germetichnyiy_datchik_ds18b20_1_metr__bez_parazitnogo_rezhima-39162651.html
