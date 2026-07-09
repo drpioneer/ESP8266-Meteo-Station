@@ -5,8 +5,8 @@
  *  При первом запуске или отсутствии сети создается точка доступа на 5 секунд (нужно успеть
  *  подключиться). В WEB-интерфейсе можно просканировать сети и подключится к имеющейся либо
  *  вписать название сети вручную, после чего на сайт начинают отправлятся данные, а в SERIAL
- *  выводится уникальный ID станции, который потом привяжется к сайту. 
- *  Дополнительно станция отсылает на сервер информацию о напряжении питания контроллера (VCC) и уровне сигнала Wifi.
+ *  выводится отладочная информация. 
+ *  Дополнительно станция отсылает на сервер информацию о напряжении питания контроллера и уровне сигнала Wifi.
  *  Все показания и статистику на графиках можно смотреть в приложениях под разные платформы, в том числе Android, IOS.
  *-------------------------------------------------------------------------------------------- */
 #include <FS.h>
@@ -24,21 +24,26 @@
 #define PIN_1WIRE_DAT             D7                        // user defined 1WIRE sensor DAT-pin for DS18B20
 #define PIN_1WIRE_GND             D8                        // user defined 1WIRE sensor GND-pin for DS18B20 (!!!для старта МК уровень на этом PINе должен быть LOW!!!)
 
-#define PIN_I2C_SDA               D2                        // user defined I2C sensor SDA-pin for AHT20&BMP280 // датчик припаяный
+/*
+#define PIN_I2C_GND               D1                        // user defined I2C sensor VCC-pin for AHT20&BMP280 // SCD40 припаяный
+#define PIN_I2C_VCC               D2                        // user defined I2C sensor SDA-pin for AHT20&BMP280
+#define PIN_I2C_CLK               D3                        // user defined I2C sensor SCL-pin for AHT20&BMP280
+#define PIN_I2C_SDA               D4                        // user defined I2C sensor GND-pin for AHT20&BMP280
+*/
+
+#define PIN_I2C_SDA               D2                        // user defined I2C sensor SDA-pin for AHT20&BMP280 // AHT20+BMP280 припаяный
 #define PIN_I2C_CLK               D4                        // user defined I2C sensor SCL-pin for AHT20&BMP280
 #define PIN_I2C_VCC               D1                        // user defined I2C sensor VCC-pin for AHT20&BMP280
 #define PIN_I2C_GND               D3                        // user defined I2C sensor GND-pin for AHT20&BMP280
 
 /*
-#define PIN_I2C_SDA               D2                        // user defined I2C sensor SDA-pin for AHT20&BMP280 // датчик на проводе
+#define PIN_I2C_SDA               D2                        // user defined I2C sensor SDA-pin for AHT20&BMP280 // AHT20+BMP280 на проводе
 #define PIN_I2C_CLK               D3                        // user defined I2C sensor SCL-pin for AHT20&BMP280
 #define PIN_I2C_VCC               D1                        // user defined I2C sensor VCC-pin for AHT20&BMP280
 #define PIN_I2C_GND               D4                        // user defined I2C sensor GND-pin for AHT20&BMP280
 */
-
 #define COM_PORT_SPEED            115200                    // скорость COM-порта отладочного терминала
-#define POSTING_INTERVAL          300000                    // интервал между отправками данных в миллисекундах (5 минут)
-#define SLEEP_TIME                600e6                     // время сна 600*10^6 мс = 10мин
+#define SLEEP_TIME                15                        // время сна в минутах
 #define ATTEMPTS                  10                        // количество попыток инициализации датчиков
 #define TEMPERATURE_PRECISION     10                        // точность бит для DS18B20. Если глючит или врет -> уменьшить до 9
 
@@ -50,7 +55,6 @@ Adafruit_AHTX0                    aht;                      // объявлен�
 Adafruit_Sensor                   *aht_humidity, *aht_temperature;
 Adafruit_BMP280                   bmx;                      // объявление объекта для работы с датчиком BMP280
 String                            hostname = "";            // уникальное имя метеостанции в формате: "ESP+MAC-адрес" (выглядит как ESPAABBCCDDEEFF)
-uint16_t                          lastConnectionTime = 0;   // время последней передачи данных
 
 // --------------------------------------------------------------------------------------------
 void WifiManStart() {                                       // процедура начального подключения к wifi, если не знает к чему подцепить - создает точку доступа ESP8266 и настроечную таблицу
@@ -76,17 +80,39 @@ void setup() {                                              // настройк�
   Serial.println(WiFi.macAddress());
   Serial.println(WiFi.localIP());
   Serial.println("MeteoStation ID: "+hostname);
-  lastConnectionTime = millis() - POSTING_INTERVAL + 15000; // передача на народный мониторинг через 15 сек.
 }
 
-String Measurement(void) {
+// ------------------расчёт значений---------------------
+String Calculate(char chr, float temper, float humid) {
+  if (temper >= -40 && temper <= +50 && humid > 0) {        // при допустимых условиях для расчёта точки росы ->
+    const float k = 273.15;                                 // температура 0°C, выраженная в градусах Кельвина
+    const float a = 17.62, b = 243.12;                      // коэффициенты зависимости удерживаемой в воздухе влаги при температуре от -40 до +50°C
+    const float p = 6.112;                                  // коэффициент зависимости давления насыщенного пара от температуры
+    const float r = 461.52;                                 // удельная газовая постоянная для водяного пара
+    float       v = (a * temper)/(b + temper);              // влияние температуры воздуха на способность удерживать водяной пар
+    float       g = v + log(humid / 100);                   // привязка температуры воздуха ко влажности для оценки точки росы
+    float     tdp = (b * g) / (a - g);                      // расчёт точки росы по упрощённой формуле Магнуса
+  //float  absHmd = p * exp(v) * humid * 2.1674 / (k + temper);                // расчет абсолютной влажности v.1
+    float  absHmd = humid * 10 * ((p * 100.0 * exp(v)) / (r * (temper + k)));  // расчет абсолютной влажности v.2
+    String   text = "";
+    text = "#D" + String(chr) + "#" + String(tdp)    + "#°C Точка росы расчётная\r\n#H";
+    text = text + String(chr) + "#" + String(absHmd) + "#g/m3 Абсолютная влажность расчётная\r\n";
+    return (text);
+  }
+  return "";
+}
+
+String Measure(void) {
   String            buf = "";                               // динамический текстовый буфер для подготовки сообщения
   uint8_t      attempts = 0;                                // счётчик попыток инициализации датчиков
   float          humAHT = 0;                                // буфер для значения влажности от AHT20
   float          tmpAHT = 0;                                // буфер для значения температуры воздуха от AHT20
   float          tmpBMx = 0;                                // буфер для значения температуры воздуха от BMP280
   float          prsBMx = 0;                                // буфер для значения атмосферного давления от BMP280
-  float          avrTMP = 0;                                // буфер для значения усреднённой температуры воздуха
+  float          tmpAVR = 0;                                // буфер для значения усреднённой температуры воздуха
+  uint16_t       co2SCD = 0;
+  float          tmpSCD = 0;
+  float          hmdSCD = 0;
   bool             real = true;                             // признак реальных значений
 
   Serial.println("\r\n***** >>> MEASUREMENTS STAGE <<< *****");
@@ -98,7 +124,7 @@ String Measurement(void) {
   digitalWrite (PIN_I2C_VCC, HIGH);                         // подключение I2C датчиков к VCC 
   Wire.begin   (PIN_I2C_SDA, PIN_I2C_CLK);                  // инициализация шины I2C с пользовательскими параметрами
 
-// -----------------------опрос и обработка данных от BMP280------------------------------
+// -----------------------опрос BMP280------------------------------
   attempts = ATTEMPTS;
   while (!bmx.begin() && (attempts == 0))                   // попытки инициализации BMP280
     attempts--;
@@ -111,14 +137,14 @@ String Measurement(void) {
       real = false;                                         // запрет дальнейших расчетов на основе полученных данных
     else {
       prsBMx = prsBMx / 133.33F;                            // пересчёт атмосферного давления из Паскалей в мм ртутного столба
-      buf = buf + "#PB#" + String(prsBMx) + "#Атмосферное давление BMP280 mmHg\r\n";
+      buf = buf + "#PB#" + String(prsBMx) + "#mmHg Атмосферное давление BMP280\r\n";
     }
 
     if (isnan(tmpBMx))                                      // когда отсутствует датчик температуры BMP280 ->
       real = false;                                         //запрет дальнейших расчетов на основе полученных данных
     else {
-      avrTMP = (avrTMP + tmpBMx);                           // накопление данных о температуре воздуха
-      buf = buf + "#TB#" + String(tmpBMx) + "#Температура воздуха BMP280 °C\r\n";
+      tmpAVR = (tmpAVR + tmpBMx);                           // накопление данных о температуре воздуха
+      buf = buf + "#TB#" + String(tmpBMx) + "#°C Температура воздуха BMP280\r\n";
     }
 
   } else {
@@ -140,13 +166,13 @@ String Measurement(void) {
     if (isnan(tmpAHT))                                      // когда отсутствует датчик температуры AHT20 ->
       real = false;                                         // запрет дальнейших расчетов на основе полученных данных
     else {
-      avrTMP = (avrTMP + tmpAHT);                           // накопление данных о температуре воздуха
-      buf = buf + "#TA#" + String(tmpAHT) + "#Температура воздуха AHT20 °C\r\n";
+      tmpAVR = (tmpAVR + tmpAHT);                           // накопление данных о температуре воздуха
+      buf = buf + "#TA#" + String(tmpAHT) + "#°C Температура воздуха AHT20\r\n";
     }
     if (isnan(humAHT))                                      // когда отсутствует датчик влажности AHT20 ->
       real = false;                                         // запрет дальнейших расчетов на основе полученных данных
     else
-      buf = buf + "#HA#" + String(humAHT) + "#Относительная влажность AHT20 %rH\r\n";
+      buf = buf + "#HA#" + String(humAHT) + "#%rH Относительная влажность AHT20\r\n";
 
   } else {
     real = false;                                           // запрет дальнейших расчетов на основе полученных данных
@@ -159,44 +185,36 @@ String Measurement(void) {
     attempts--;
   if (mySensor.begin()) {                                   // инициализация SCD40
     Serial.println("Sensor SCD40 success init");
-    while (!mySensor.readMeasurement()) {}                  // readMeasurement will return true when fresh data is available
+    for (uint8_t i=0; i < 10000; i++) {
+      if (mySensor.readMeasurement()) {                     // ожидание свежих значений от SCD40
+        co2SCD = mySensor.getCO2();
+        tmpSCD = mySensor.getTemperature();
+        hmdSCD = mySensor.getHumidity();
+        buf = buf + "#DS#" + String(co2SCD) + "#ppm Концентрация CO2 SCD40\r\n";
+        buf = buf + "#TS#" + String(tmpSCD) + "#°C Температура воздуха SCD40\r\n";
+        buf = buf + "#HS#" + String(hmdSCD) + "#%rH Относительная влажность SCD40\r\n";
 
-    uint16_t co2SCD = mySensor.getCO2();
-    float tmpSCD = mySensor.getTemperature();
-    float hmdSCD = mySensor.getHumidity();
-
-    buf = buf + "#DS#" + String(co2SCD) + "#Концентрация CO2 SCD40 ppm\r\n";
-    buf = buf + "#TS#" + String(tmpSCD) + "#Температура воздуха SCD40 °C\r\n";
-    buf = buf + "#HS#" + String(hmdSCD) + "#Относительная влажность SCD40 %rH\r\n";
-
+        break;
+      }
+    }
   } else { Serial.println("Sensor SCD40 not detected, сheck I2C interface & sensor address"); }
 
 // -----------------------окончание работы датчиками I2C------------------------------
   pinMode      (PIN_I2C_GND, INPUT);                        // обесточивание I2C датчиков
   pinMode      (PIN_I2C_VCC, INPUT);
     
-// ------------------расчёт значений---------------------
-  if (abs(tmpBMx - tmpAHT) > 1)                             // при большой разнице между значениями с датчиков температуры воздуха ->
-    real = false;                                           // запрет дальнейших расчетов на основе полученных данных
+// -----------------------расчётные значения------------------------------
+  if (abs(tmpBMx - tmpAHT) > 1)                             // при большой разнице между значениями с датчиков температуры воздуха AHT20+BMP280 ->
+    real = false;                                           // запрет расчетов на основе полученных данных от AHT20+BMP280
 
-  if (real) {                                               // когда отсутствует запрет расчета значений ->
-    avrTMP = avrTMP / 2;                                    // усреднение температуры воздуха
-    buf = buf + "#TZ#" + String(avrTMP) + "#Температура воздуха расчётная °C\r\n";
-    if (avrTMP >= -40 && avrTMP <= +50 && humAHT > 0) {     // при допустимых условиях для расчёта точки росы ->
-      const float k = 273.15;                               // температура 0°C, выраженная в градусах Кельвина
-      const float a = 17.62, b = 243.12;                    // коэффициенты зависимости удерживаемой в воздухе влаги при температуре от -40 до +50°C
-      const float p = 6.112;                                // коэффициент зависимости давления насыщенного пара от температуры
-      const float r = 461.52;                               // удельная газовая постоянная для водяного пара
-      float       v = (a * avrTMP)/(b + avrTMP);  // влияние температуры воздуха на способность удерживать водяной пар
-      float       g = v + log(humAHT / 100);              // привязка температуры воздуха ко влажности для оценки точки росы
-      float     tdp = (b * g) / (a - g);                    // расчёт точки росы по упрощённой формуле Магнуса
-      //float absHmd = p * exp(v) * humAHT * 2.1674 / (k + avrTMP);             // расчет абсолютной влажности v.1
-      float absHmd = humAHT * 10 * ((p * 100.0 * exp(v)) / (r * (avrTMP + k))); // расчет абсолютной влажности v.2
-      buf = buf + "#DZ#" + String(tdp) + "#Точка росы расчётная °C\r\n";
-      buf = buf + "#HZ#" + String(absHmd) + "#Абсолютная влажность расчётная g/m3\r\n";
-    }
+  if (real) {                                               // когда все значения от AHT20 + BMP280 корректны ->
+    tmpAVR = tmpAVR / 2;                                    // усреднение температуры воздуха
+    buf = buf + "#TZ#" + String(tmpAVR) + "#°C Температура воздуха расчётная \r\n";
+    buf = buf + Calculate('Z', tmpAVR, humAHT);
+  } else {                                                  // используем значения от SCD40, когда значения от AHT20 + BMP280 НЕ корректны ->
+    buf = buf + (Calculate('Z', tmpSCD, hmdSCD));
   }
-  
+
 // -----------------------работа с DS18B20----------------------------
   pinMode      (PIN_1WIRE_GND, OUTPUT);
   digitalWrite (PIN_1WIRE_GND, LOW);                        // подключение 1WIRE датчиков к GND
@@ -214,7 +232,7 @@ String Measurement(void) {
       ds18b20.requestTemperatures();                        // проведение измерений DS18B20
       float tmpDS18 = ds18b20.getTempCByIndex(i);
       if (!isnan(tmpDS18))
-        buf = buf + "#T" + String(i+1) + "#" + String(tmpDS18) + "#Температура DS18B20 °C\r\n"; // чтение температуры с конкретного датчика DS18B20
+        buf = buf + "#T" + String(i+1) + "#" + String(tmpDS18) + "#°C Температура DS18B20\r\n"; // чтение температуры с конкретного датчика DS18B20
     }
   } else { Serial.println("Sensor DS18B20 not detected, сheck 1-Wire interface"); }
 
@@ -223,14 +241,14 @@ String Measurement(void) {
 
 // ---------------------значения ESP8266-------------------------
   long dBm = WiFi.RSSI();
-  if (dBm > 0)  buf = buf + "#WF#-120#Wifi отсутствует dBm\r\n";
-    else  buf = buf + "#WF#" + String(dBm) + "#Wifi уровень dBm\r\n";
+  if (dBm > 0)  buf = buf + "#WF#-120#dBm Wifi отсутствует\r\n";
+    else  buf = buf + "#WF#" + String(dBm) + "#dBm Wifi уровень\r\n";
 
   float vcc = ESP.getVcc();
   if (!isnan(vcc)) {
     vcc = (vcc + 300) / 1000;                               // напряжения питания ESP8266
     if (vcc > 0)
-      buf = buf + "#VС#" + String(vcc) + "#Напряжение питания ESP8266 V\r\n";
+      buf = buf + "#VCC#" + String(vcc) + "#V Напряжение питания ESP8266\r\n";
   }
 
   buf = buf + "##\r\n";                                     // признак окончания посылки на narodmon.ru
@@ -240,7 +258,7 @@ String Measurement(void) {
 // --------------------------------------------------------------------------------------------
 bool SendToNarodmon() {                                     // формирование и отправка пакета
   WiFiClient client;
-  String msg = "#" + hostname + "\r\n" + Measurement();     // id станции + показания датчиков
+  String msg = "#" + hostname + "\r\n" + Measure();         // id станции + показания датчиков
   Serial.print (msg);
   if (!client.connect("narodmon.ru",8283)) {                // когда попытка подключения не удалась ->
     Serial.println("connection failed"); 
@@ -264,9 +282,9 @@ void loop() {
       Serial.println ("Successful sending!");
   } else {                                                  // при отсутствии wifi подключения к сети ->
     Serial.println("WIFI connection failed"); 
-    String msg = "#" + hostname + "\r\n" + Measurement();   // формирование посылки
+    String msg = "#" + hostname + "\r\n" + Measure();       // формирование посылки
     Serial.print (msg);
   }
   Serial.print ("\r\n***** >>> SNOOZING STAGE <<< *****\r\n\r\n_ _ _ zzzzZZZZ _ _ _\r\n\r\n***** MeteoStation snoozing ******\r\n");
-  ESP.deepSleep(SLEEP_TIME);                                // сон, по окончании которого активируется pin D0 -> RESET МК и программа стартует заново
+  ESP.deepSleep(SLEEP_TIME * 60e6);                         // сон (в мс), по окончании которого активируется pin D0 -> RESET МК и программа стартует заново
 }
