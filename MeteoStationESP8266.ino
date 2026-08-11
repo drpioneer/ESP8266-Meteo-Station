@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------------------------------
- *  Метеостанция на базе ESP8266 ( LoLin / WeMos D1 mini )
+ *  Метеостанция на базе ESP8266 ( LoLin D1 mini / WeMos D1 mini )
  *  http://arduino.ru/forum/proekty/meteostantsiya-dlya-narodnogo-monitoringa#comment-551457
  *  Станция собирает информацию от датчиков и передает информацию на сервер нородного мониторинга
  *  При первом запуске или отсутствии сети создается точка доступа на 5 секунд (нужно успеть
@@ -92,11 +92,11 @@ String Calculate(char chr, float temper, float humid) {
     float       v = (a * temper)/(b + temper);              // влияние температуры воздуха на способность удерживать водяной пар
     float       g = v + log(humid / 100);                   // привязка температуры воздуха ко влажности для оценки точки росы
     float     tdp = (b * g) / (a - g);                      // расчёт точки росы по упрощённой формуле Магнуса
-  //float  absHmd = p * exp(v) * humid * 2.1674 / (k + temper);                // расчет абсолютной влажности v.1
-    float  absHmd = humid * 10 * ((p * 100.0 * exp(v)) / (r * (temper + k)));  // расчет абсолютной влажности v.2
+    float  absHmd = p * exp(v) * humid * 2.1674 / (k + temper);                // расчет абсолютной влажности v.1
+    //float  absHmd = humid * 10 * ((p * 100.0 * exp(v)) / (r * (temper + k)));  // расчет абсолютной влажности v.2
     String   text = "";
-    text = "#D" + String(chr) + "#" + String(tdp)    + "#°C Точка росы расчётная\r\n#H";
-    text = text + String(chr) + "#" + String(absHmd) + "#g/m3 Абсолютная влажность расчётная\r\n";
+    text = "#D" + String(chr) + "#" + String(tdp)     + "#°C Dew point\r\n#H";
+    text = text + String(chr) + "#" + String(absHmd) + "#g/m3 Absolute humidity\r\n";
     return (text);
   }
   return "";
@@ -137,14 +137,14 @@ String Measure(void) {
       real = false;                                         // запрет дальнейших расчетов на основе полученных данных
     else {
       prsBMx = prsBMx / 133.33F;                            // пересчёт атмосферного давления из Паскалей в мм ртутного столба
-      buf = buf + "#PB#" + String(prsBMx) + "#mmHg Атмосферное давление BMP280\r\n";
+      buf = buf + "#PB#" + String(prsBMx) + "#mmHg Atmospheric pressure BMP280\r\n";
     }
 
     if (isnan(tmpBMx))                                      // когда отсутствует датчик температуры BMP280 ->
       real = false;                                         //запрет дальнейших расчетов на основе полученных данных
     else {
       tmpAVR = (tmpAVR + tmpBMx);                           // накопление данных о температуре воздуха
-      buf = buf + "#TB#" + String(tmpBMx) + "#°C Температура воздуха BMP280\r\n";
+      buf = buf + "#TB#" + String(tmpBMx) + "#°C Air temperature BMP280\r\n";
     }
 
   } else {
@@ -161,18 +161,18 @@ String Measure(void) {
     sensors_event_t   humid, temp;
     aht.getEvent(&humid, &temp);                            // обновление данных об относительной влажности и температуре из AHT20
     tmpAHT = temp.temperature;                              // извлечение температуры в градусах Цельсия
-    humAHT    = humid.relative_humidity;                    // извлечение относительной влажности в процентах
+    humAHT = humid.relative_humidity;                       // извлечение относительной влажности в процентах
 
     if (isnan(tmpAHT))                                      // когда отсутствует датчик температуры AHT20 ->
       real = false;                                         // запрет дальнейших расчетов на основе полученных данных
     else {
       tmpAVR = (tmpAVR + tmpAHT);                           // накопление данных о температуре воздуха
-      buf = buf + "#TA#" + String(tmpAHT) + "#°C Температура воздуха AHT20\r\n";
+      buf = buf + "#TA#" + String(tmpAHT) + "#°C Air temperature AHT20\r\n";
     }
     if (isnan(humAHT))                                      // когда отсутствует датчик влажности AHT20 ->
       real = false;                                         // запрет дальнейших расчетов на основе полученных данных
     else
-      buf = buf + "#HA#" + String(humAHT) + "#%rH Относительная влажность AHT20\r\n";
+      buf = buf + "#HA#" + String(humAHT) + "#%rH Relative humidity AHT20\r\n";
 
   } else {
     real = false;                                           // запрет дальнейших расчетов на основе полученных данных
@@ -190,9 +190,9 @@ String Measure(void) {
         co2SCD = mySensor.getCO2();
         tmpSCD = mySensor.getTemperature();
         hmdSCD = mySensor.getHumidity();
-        buf = buf + "#DS#" + String(co2SCD) + "#ppm Концентрация CO2 SCD40\r\n";
-        buf = buf + "#TS#" + String(tmpSCD) + "#°C Температура воздуха SCD40\r\n";
-        buf = buf + "#HS#" + String(hmdSCD) + "#%rH Относительная влажность SCD40\r\n";
+        buf = buf + "#DS#" + String(co2SCD) + "#ppm CO2 concentration SCD40\r\n";
+        buf = buf + "#TS#" + String(tmpSCD) + "#°C Air temperature SCD40\r\n";
+        buf = buf + "#HS#" + String(hmdSCD) + "#%rH Relative humidity SCD40\r\n";
 
         break;
       }
@@ -209,7 +209,7 @@ String Measure(void) {
 
   if (real) {                                               // когда все значения от AHT20 + BMP280 корректны ->
     tmpAVR = tmpAVR / 2;                                    // усреднение температуры воздуха
-    buf = buf + "#TZ#" + String(tmpAVR) + "#°C Температура воздуха расчётная \r\n";
+    buf = buf + "#TZ#" + String(tmpAVR) + "#°C Air temperature\r\n";
     buf = buf + Calculate('Z', tmpAVR, humAHT);
   } else {                                                  // используем значения от SCD40, когда значения от AHT20 + BMP280 НЕ корректны ->
     buf = buf + (Calculate('Z', tmpSCD, hmdSCD));
@@ -232,7 +232,7 @@ String Measure(void) {
       ds18b20.requestTemperatures();                        // проведение измерений DS18B20
       float tmpDS18 = ds18b20.getTempCByIndex(i);
       if (!isnan(tmpDS18))
-        buf = buf + "#T" + String(i+1) + "#" + String(tmpDS18) + "#°C Температура DS18B20\r\n"; // чтение температуры с конкретного датчика DS18B20
+        buf = buf + "#T" + String(i+1) + "#" + String(tmpDS18) + "#°C Temperature DS18B20\r\n"; // чтение температуры с конкретного датчика DS18B20
     }
   } else { Serial.println("Sensor DS18B20 not detected, сheck 1-Wire interface"); }
 
@@ -241,14 +241,14 @@ String Measure(void) {
 
 // ---------------------значения ESP8266-------------------------
   long dBm = WiFi.RSSI();
-  if (dBm > 0)  buf = buf + "#WF#-120#dBm Wifi отсутствует\r\n";
-    else  buf = buf + "#WF#" + String(dBm) + "#dBm Wifi уровень\r\n";
+  if (dBm > 0)  buf = buf + "#WF#-120#dBm Wifi is missing\r\n";
+    else  buf = buf + "#WF#" + String(dBm) + "#dBm Wifi level\r\n";
 
   float vcc = ESP.getVcc();
   if (!isnan(vcc)) {
     vcc = (vcc + 300) / 1000;                               // напряжения питания ESP8266
     if (vcc > 0)
-      buf = buf + "#VCC#" + String(vcc) + "#V Напряжение питания ESP8266\r\n";
+      buf = buf + "#VCC#" + String(vcc) + "#V Supply voltage ESP8266\r\n";
   }
 
   buf = buf + "##\r\n";                                     // признак окончания посылки на narodmon.ru
@@ -269,7 +269,7 @@ bool SendToNarodmon() {                                     // формиров�
     delay(100);
     while (client.available()) {                            // если прилетит ответ -> 
       String line=client.readStringUntil('\r');
-      Serial.print("Answer from server: " + line);          // отобразить ответ в Serial
+      Serial.print("Answer from server: " + line);          // вывод ответа в Serial
     }
   }
   return true;                                              // возврат TRUE (успешная посылка)
@@ -282,7 +282,7 @@ void loop() {
       Serial.println ("Successful sending!");
   } else {                                                  // при отсутствии wifi подключения к сети ->
     Serial.println("WIFI connection failed"); 
-    String msg = "#" + hostname + "\r\n" + Measure();       // формирование посылки
+    String msg = "#" + hostname + "\r\n" + Measure();       // формирование отчёта
     Serial.print (msg);
   }
   Serial.print ("\r\n***** >>> SNOOZING STAGE <<< *****\r\n\r\n_ _ _ zzzzZZZZ _ _ _\r\n\r\n***** MeteoStation snoozing ******\r\n");
